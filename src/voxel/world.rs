@@ -34,7 +34,7 @@ pub fn startup(
 ) {
     let block_texture = asset_server.load("textures/block.png");
 
-    const CHUNK_COUNT: i32 = 2;
+    const CHUNK_COUNT: i32 = 10;
     for x in 0..CHUNK_COUNT {
         for z in 0..CHUNK_COUNT {
             let id = commands

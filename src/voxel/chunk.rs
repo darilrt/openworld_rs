@@ -4,6 +4,7 @@ use bevy::{
     render::{mesh::Indices, render_resource::PrimitiveTopology},
 };
 use bevy_rapier3d::geometry::Collider;
+use noise::NoiseFn;
 
 pub const CHUNK_SIZE: usize = 64;
 
@@ -22,32 +23,33 @@ impl Chunk {
             updated: false,
         };
 
-        let global_pos: Vec3 = Vec3::new(
-            position.x as f32 * CHUNK_SIZE as f32,
-            position.y as f32 * CHUNK_SIZE as f32,
-            position.z as f32 * CHUNK_SIZE as f32,
+        let global_pos: IVec3 = IVec3::new(
+            position.x * CHUNK_SIZE as i32,
+            position.y * CHUNK_SIZE as i32,
+            position.z * CHUNK_SIZE as i32,
         );
+
+        let perlin_noise = noise::Perlin::new(21744032);
 
         for x in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {
                 for z in 0..CHUNK_SIZE {
-                    let v: Vec2 =
-                        Vec2::new(global_pos.x + x as f32, global_pos.z + z as f32) * 0.125;
-                    let h: f32 = (v.x.sin() + v.y.sin()) * 2.5;
-                    this.blocks[x][y][z] = if h > y as f32 - 16.0 {
-                        if y < 15 {
-                            1
-                        } else {
-                            2
-                        }
-                    } else {
-                        0
-                    };
+                    let pos: IVec3 = IVec3::new(x as i32, y as i32, z as i32) + global_pos;
+                    this.blocks[x][y][z] = generate(perlin_noise, pos);
                 }
             }
         }
 
         this
+    }
+}
+
+fn generate(perlin: noise::Perlin, pos: IVec3) -> u8 {
+    let h: f64 = perlin.get([pos.x as f64 + 0.5, pos.y as f64 + 0.5]);
+    if h > 0.0 {
+        1
+    } else {
+        0
     }
 }
 
