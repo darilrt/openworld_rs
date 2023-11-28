@@ -1,4 +1,7 @@
-use std::thread::{self, JoinHandle};
+use std::{
+    thread::{self, ScopedJoinHandle},
+    time::Instant,
+};
 
 use super::chunk::*;
 use bevy::{prelude::*, utils::HashMap};
@@ -35,38 +38,42 @@ pub fn startup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut world: ResMut<World>,
 ) {
-    let block_texture = asset_server.load("textures/block.png");
-
     const CHUNK_COUNT: i32 = 10;
+    let total_chunks = CHUNK_COUNT * CHUNK_COUNT;
 
-    // let total_chunks = CHUNK_COUNT * CHUNK_COUNT;
-    // let mut chunks: Vec<Chunk> = Vec::with_capacity(total_chunks as usize);
-    // let mut threads: Vec<JoinHandle<Chunk>> = Vec::with_capacity(total_chunks as usize);
+    let block_texture: Handle<Image> = asset_server.load("textures/block.png");
 
-    // for i in 0..total_chunks {
-    //     let x: i32 = i % CHUNK_COUNT;
-    //     let z = i / CHUNK_COUNT;
+    let now = Instant::now();
 
-    //     let coords = Box::new(IVec2::new(x, z));
+    thread::scope(|s| {
+        let mut threads: Vec<ScopedJoinHandle<'_, (Chunk, Mesh, Collider)>> =
+            Vec::with_capacity(total_chunks as usize);
 
-    //     let thread = thread::spawn(move || generate_chunk(coords.x, coords.x));
-    //     threads[i as usize] = thread;
-    // }
+        for i in 0..total_chunks {
+            let x: i32 = i % CHUNK_COUNT;
+            let z: i32 = i / CHUNK_COUNT;
 
-    // for thread in threads {
-    //     let chunk = thread.join().unwrap();
-    //     chunks.push(chunk);
-    // }
+            let spawn: ScopedJoinHandle<'_, (Chunk, Mesh, Collider)> = s.spawn(move || {
+                let mut chunk: Chunk = generate_chunk(x, z);
+                let (mesh, collider) = build_chunk_mesh(&chunk);
+                chunk.updated = true;
+                (chunk, mesh, collider)
+            });
+            threads.push(spawn);
+        }
 
-    for x in 0..CHUNK_COUNT {
-        for z in 0..CHUNK_COUNT {
-            let chunk = generate_chunk(x, z);
+        for ele in threads {
+            let (chunk, mesh, collider) = ele.join().unwrap();
 
-            let id = commands
+            let x = chunk.position.x;
+            let y = chunk.position.y;
+            let z = chunk.position.z;
+
+            let id: Entity = commands
                 .spawn((
                     chunk,
                     PbrBundle {
-                        mesh: meshes.add(Mesh::from(shape::Plane::from_size(8.0))),
+                        mesh: meshes.add(mesh),
                         material: materials
                             .add(StandardMaterial {
                                 base_color: Color::rgb(0.9, 0.9, 0.9),
@@ -81,17 +88,15 @@ pub fn startup(
                         ),
                         ..default()
                     },
-                    Collider::compound(vec![(
-                        Vec3::new(0.0, 0.0, 0.0),
-                        Rot::IDENTITY,
-                        Collider::cuboid(1.0, 1.0, 1.0),
-                    )]),
+                    collider,
                 ))
                 .id();
 
-            world.set_chunk(IVec3::new(x, 0, z), id);
+            world.set_chunk(IVec3 { x, y, z }, id);
         }
-    }
+    });
+
+    println!("Generated {} chunks in {:?}", total_chunks, now.elapsed());
 }
 
 fn generate_chunk(x: i32, z: i32) -> Chunk {

@@ -1,4 +1,5 @@
 use bevy::diagnostic::LogDiagnosticsPlugin;
+use bevy::pbr::CascadeShadowConfig;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
@@ -43,7 +44,10 @@ fn setup(mut commands: Commands) {
             shadows_enabled: true,
             ..default()
         },
-
+        cascade_shadow_config: CascadeShadowConfig {
+            bounds: vec![50.0, 100.0, 200.0, 500.0],
+            ..default()
+        },
         ..default()
     });
 }

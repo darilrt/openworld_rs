@@ -7,7 +7,7 @@ use bevy_rapier3d::geometry::Collider;
 
 pub const CHUNK_SIZE: usize = 64;
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Chunk {
     pub updated: bool,
     pub position: IVec3,
@@ -43,7 +43,7 @@ pub fn update(
     }
 }
 
-fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
+pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
     let mut colliders: Vec<(Vec3, Quat, Collider)> = vec![];
 
