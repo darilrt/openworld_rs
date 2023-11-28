@@ -1,11 +1,8 @@
-use bevy::diagnostic::LogDiagnosticsPlugin;
 use bevy::pbr::CascadeShadowConfig;
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_rapier3d::prelude::*;
 use player::*;
-use voxel::*;
 
 mod player;
 mod voxel;
@@ -25,14 +22,15 @@ fn main() {
                 .set(ImagePlugin::default_nearest()),
             RapierPhysicsPlugin::<NoUserData>::default(),
             // RapierDebugRenderPlugin::default(),
-            WorldInspectorPlugin::new(),
-            // FrameTimeDiagnosticsPlugin::default(),
-            LogDiagnosticsPlugin::default(),
-            VoxelPlugins::default(),
+            // WorldInspectorPlugin::new(),
+            // LogDiagnosticsPlugin::default(),
+            voxel::VoxelPlugins::default(),
             PlayerPlugins::default(),
         ))
+        .add_plugins(EguiPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, update)
+        .add_systems(Update, update_chunks)
         .run();
 }
 
@@ -61,4 +59,27 @@ fn update(time: Res<Time>, mut contexts: EguiContexts, frame_count: Res<bevy::co
         ));
         ui.label(format!("FPS: {:.2}", 1.0 / time.delta_seconds_f64()));
     });
+}
+
+fn update_chunks(
+    mut world: ResMut<voxel::World>,
+    query_player: Query<&Transform, With<Player>>,
+    mut last_chunk: Local<IVec3>,
+) {
+    let player_pos = query_player.single().translation;
+
+    let chunk_pos = IVec3::new(
+        (player_pos.x / voxel::CHUNK_SIZE as f32).floor() as i32,
+        (player_pos.y / voxel::CHUNK_SIZE as f32).floor() as i32,
+        (player_pos.z / voxel::CHUNK_SIZE as f32).floor() as i32,
+    );
+
+    if *last_chunk != chunk_pos {
+        for x in -4..5 {
+            for z in -4..5 {
+                world.load_chunk(chunk_pos + IVec3::new(x, 0, z));
+            }
+        }
+        *last_chunk = chunk_pos;
+    }
 }

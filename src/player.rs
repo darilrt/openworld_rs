@@ -1,6 +1,7 @@
 use bevy::{
     input::mouse::MouseMotion,
     prelude::*,
+    render::camera,
     window::{CursorGrabMode, PrimaryWindow},
 };
 use bevy_rapier3d::prelude::*;
@@ -46,6 +47,7 @@ impl Default for ControlsSettings {
 enum Mode {
     Free = 0,
     Orbit = 1,
+    Fly = 2,
 }
 
 #[derive(Component)]
@@ -88,7 +90,7 @@ fn setup(
                 ..default()
             })),
             material: materials.add(Color::rgb_u8(124, 144, 255).into()),
-            transform: Transform::from_xyz(5.0, 65.0, 5.0),
+            transform: Transform::from_xyz(32.0, 62.0, 32.0),
             ..default()
         },
         Player {
@@ -147,6 +149,11 @@ fn update_camera(
 
                 window.cursor.grab_mode = CursorGrabMode::None;
                 window.cursor.visible = true;
+            } else if input.just_pressed(KeyCode::F) {
+                camera.mode = Mode::Fly;
+
+                window.cursor.grab_mode = CursorGrabMode::Locked;
+                window.cursor.visible = false;
             }
 
             if mouse_rel.length() > 0.0 {
@@ -155,28 +162,82 @@ fn update_camera(
 
                 player.camera_rotation.x = player.camera_rotation.x.clamp(-1.5, 1.5);
             }
+
+            player.camera_pivote = player_transform.translation
+                + player_transform.up() * 1.5
+                + Quat::from_rotation_y(player.camera_rotation.y) * player_transform.right() * 0.5;
+
+            camera_transform.translation = player.camera_pivote
+                + Quat::from_rotation_y(player.camera_rotation.y)
+                    * Quat::from_rotation_x(player.camera_rotation.x)
+                    * Vec3::new(0.0, 0.0, player.camera_distance);
+
+            camera_transform.look_at(player.camera_pivote, Vec3::Y);
+            (*yaw, *pitch, _) = camera_transform.rotation.to_euler(EulerRot::YXZ);
+        }
+        Mode::Fly => {
+            if input.pressed(KeyCode::Escape) {
+                camera.mode = Mode::Free;
+
+                window.cursor.grab_mode = CursorGrabMode::None;
+                window.cursor.visible = true;
+            } else if input.just_pressed(KeyCode::F) {
+                camera.mode = Mode::Orbit;
+
+                window.cursor.grab_mode = CursorGrabMode::Locked;
+                window.cursor.visible = false;
+            }
+
+            if mouse_rel.length() > 0.0 {
+                player.camera_rotation.y -= mouse_rel_dt.x;
+                player.camera_rotation.x -= mouse_rel_dt.y;
+
+                player.camera_rotation.x = player.camera_rotation.x.clamp(-1.5, 1.5);
+            }
+
+            let direction = Vec3 {
+                x: input.pressed(KeyCode::D) as i32 as f32
+                    - input.pressed(KeyCode::A) as i32 as f32,
+                y: input.pressed(KeyCode::Space) as i32 as f32
+                    - input.pressed(KeyCode::ShiftLeft) as i32 as f32,
+                z: input.pressed(KeyCode::S) as i32 as f32
+                    - input.pressed(KeyCode::W) as i32 as f32,
+            }
+            .normalize();
+
+            let mouse_rel_dt = mouse_rel * time.delta_seconds() * 1.0;
+
+            if mouse_rel.length() > 0.0 {
+                *yaw -= mouse_rel_dt.x;
+                *pitch -= mouse_rel_dt.y;
+
+                *pitch = pitch.clamp(-1.5, 1.5);
+
+                camera_transform.rotation = Quat::from_euler(EulerRot::YXZ, *yaw, *pitch, 0.0);
+            }
+
+            if direction.length() > 0.0 {
+                let direction = camera_transform.rotation * direction;
+                camera_transform.translation += direction * time.delta_seconds() * 20.0;
+            }
         }
     }
-
-    player.camera_pivote = player_transform.translation
-        + player_transform.up() * 1.5
-        + Quat::from_rotation_y(player.camera_rotation.y) * player_transform.right() * 0.5;
-
-    camera_transform.translation = player.camera_pivote
-        + Quat::from_rotation_y(player.camera_rotation.y)
-            * Quat::from_rotation_x(player.camera_rotation.x)
-            * Vec3::new(0.0, 0.0, player.camera_distance);
-
-    camera_transform.look_at(player.camera_pivote, Vec3::Y);
-    (*yaw, *pitch, _) = camera_transform.rotation.to_euler(EulerRot::YXZ);
 }
 
 fn update_player(
     mut player_query: Query<(&mut KinematicCharacterController, &mut Player), With<Player>>,
+    mut camera_query: Query<&mut PlayerCamera, With<PlayerCamera>>,
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
     settings: Res<ControlsSettings>,
 ) {
+    let camera = camera_query.single_mut();
+
+    match camera.mode {
+        Mode::Fly => return,
+        _ => (),
+    }
+
     let (mut controller, mut player) = player_query.single_mut();
 
     let direction = Vec3 {
