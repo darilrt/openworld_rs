@@ -88,7 +88,7 @@ fn setup(
                 ..default()
             })),
             material: materials.add(Color::rgb_u8(124, 144, 255).into()),
-            transform: Transform::from_xyz(5.0, 30.0, 5.0),
+            transform: Transform::from_xyz(5.0, 65.0, 5.0),
             ..default()
         },
         Player {

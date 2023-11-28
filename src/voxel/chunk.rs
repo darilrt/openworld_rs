@@ -4,7 +4,6 @@ use bevy::{
     render::{mesh::Indices, render_resource::PrimitiveTopology},
 };
 use bevy_rapier3d::geometry::Collider;
-use noise::NoiseFn;
 
 pub const CHUNK_SIZE: usize = 64;
 
@@ -17,39 +16,11 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn new(position: IVec3) -> Self {
-        let mut this: Chunk = Self {
+        Self {
             position,
             blocks: vec![vec![vec![0; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
             updated: false,
-        };
-
-        let global_pos: IVec3 = IVec3::new(
-            position.x * CHUNK_SIZE as i32,
-            position.y * CHUNK_SIZE as i32,
-            position.z * CHUNK_SIZE as i32,
-        );
-
-        let perlin_noise = noise::Perlin::new(21744032);
-
-        for x in 0..CHUNK_SIZE {
-            for y in 0..CHUNK_SIZE {
-                for z in 0..CHUNK_SIZE {
-                    let pos: IVec3 = IVec3::new(x as i32, y as i32, z as i32) + global_pos;
-                    this.blocks[x][y][z] = generate(perlin_noise, pos);
-                }
-            }
         }
-
-        this
-    }
-}
-
-fn generate(perlin: noise::Perlin, pos: IVec3) -> u8 {
-    let h: f64 = perlin.get([pos.x as f64 + 0.5, pos.y as f64 + 0.5]);
-    if h > 0.0 {
-        1
-    } else {
-        0
     }
 }
 
