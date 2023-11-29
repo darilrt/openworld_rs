@@ -5,6 +5,8 @@ use bevy::{
 };
 use bevy_rapier3d::geometry::Collider;
 
+use crate::player::Player;
+
 pub const CHUNK_SIZE: usize = 64;
 
 #[derive(Component, Clone)]
@@ -27,9 +29,24 @@ impl Chunk {
 pub fn update(
     mut query: Query<(&mut Chunk, &mut Collider, &mut Handle<Mesh>), With<Chunk>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    // mut world: ResMut<voxelWorld>,
+    mut player_query: Query<&mut Transform, With<Player>>,
+    mut world: ResMut<super::world::World>,
 ) {
+    let player_transform = player_query.single_mut();
+
     for (mut chunk, mut collider, mesh_ref) in &mut query {
+        let chunk_pos = chunk.position;
+
+        if player_transform.translation.distance(Vec3::new(
+            chunk_pos.x as f32 * CHUNK_SIZE as f32 + 0.5,
+            chunk_pos.y as f32 * CHUNK_SIZE as f32 + 0.5,
+            chunk_pos.z as f32 * CHUNK_SIZE as f32 + 0.5,
+        )) > 20.0
+        {
+            world.unload_chunk(chunk_pos);
+            continue;
+        }
+
         if chunk.updated {
             continue;
         }

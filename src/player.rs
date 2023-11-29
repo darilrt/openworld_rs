@@ -218,7 +218,7 @@ fn update_camera(
 
             if direction.length() > 0.0 {
                 let direction = camera_transform.rotation * direction;
-                camera_transform.translation += direction * time.delta_seconds() * 20.0;
+                camera_transform.translation += direction * time.delta_seconds() * 40.0;
             }
         }
     }
