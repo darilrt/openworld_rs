@@ -1,27 +1,43 @@
+use std::sync::Arc;
+
 // use super::world::World as voxelWorld;
 use bevy::{
     prelude::*,
     render::{mesh::Indices, render_resource::PrimitiveTopology},
 };
+use bevy_egui::egui::mutex::RwLock;
 use bevy_rapier3d::geometry::Collider;
 
 use crate::player::Player;
 
 pub const CHUNK_SIZE: usize = 64;
 
-#[derive(Component, Clone)]
+#[derive(Component)]
 pub struct Chunk {
     pub updated: bool,
     pub position: IVec3,
-    pub blocks: Vec<Vec<Vec<u8>>>,
+    pub blocks: Arc<RwLock<Vec<Vec<Vec<u8>>>>>,
 }
 
 impl Chunk {
     pub fn new(position: IVec3) -> Self {
         Self {
             position,
-            blocks: vec![vec![vec![0; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+            blocks: Arc::new(RwLock::new(vec![
+                vec![vec![0; CHUNK_SIZE]; CHUNK_SIZE];
+                CHUNK_SIZE
+            ])),
             updated: false,
+        }
+    }
+}
+
+impl Clone for Chunk {
+    fn clone(&self) -> Self {
+        Self {
+            position: self.position,
+            blocks: self.blocks.clone(),
+            updated: self.updated,
         }
     }
 }
@@ -41,10 +57,9 @@ pub fn update(
             chunk_pos.x as f32 * CHUNK_SIZE as f32 + 0.5,
             chunk_pos.y as f32 * CHUNK_SIZE as f32 + 0.5,
             chunk_pos.z as f32 * CHUNK_SIZE as f32 + 0.5,
-        )) > 20.0
+        )) > 5.0 * CHUNK_SIZE as f32
         {
             world.unload_chunk(chunk_pos);
-            continue;
         }
 
         if chunk.updated {
@@ -73,19 +88,20 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
     for ix in 0..CHUNK_SIZE {
         for iy in 0..CHUNK_SIZE {
             for iz in 0..CHUNK_SIZE {
-                let block = chunk.blocks[ix][iy][iz];
+                let block = chunk.blocks.as_ref().write()[ix][iy][iz];
+                let blocks = chunk.blocks.as_ref().read();
 
                 if block == 0 {
                     continue;
                 }
 
                 // add collider if any side is exposed
-                if (ix == 0 || ix == CHUNK_SIZE - 1 || chunk.blocks[ix - 1][iy][iz] == 0)
-                    || (ix == 0 || ix == CHUNK_SIZE - 1 || chunk.blocks[ix + 1][iy][iz] == 0)
-                    || (iy == 0 || iy == CHUNK_SIZE - 1 || chunk.blocks[ix][iy - 1][iz] == 0)
-                    || (iy == 0 || iy == CHUNK_SIZE - 1 || chunk.blocks[ix][iy + 1][iz] == 0)
-                    || (iz == 0 || iz == CHUNK_SIZE - 1 || chunk.blocks[ix][iy][iz - 1] == 0)
-                    || (iz == 0 || iz == CHUNK_SIZE - 1 || chunk.blocks[ix][iy][iz + 1] == 0)
+                if (ix == 0 || ix == CHUNK_SIZE - 1 || blocks[ix - 1][iy][iz] == 0)
+                    || (ix == 0 || ix == CHUNK_SIZE - 1 || blocks[ix + 1][iy][iz] == 0)
+                    || (iy == 0 || iy == CHUNK_SIZE - 1 || blocks[ix][iy - 1][iz] == 0)
+                    || (iy == 0 || iy == CHUNK_SIZE - 1 || blocks[ix][iy + 1][iz] == 0)
+                    || (iz == 0 || iz == CHUNK_SIZE - 1 || blocks[ix][iy][iz - 1] == 0)
+                    || (iz == 0 || iz == CHUNK_SIZE - 1 || blocks[ix][iy][iz + 1] == 0)
                 {
                     colliders.push((
                         Vec3::new(ix as f32 + 0.5, iy as f32 + 0.5, iz as f32 + 0.5),
@@ -130,7 +146,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 };
 
                 // Front
-                if iz == 0 || chunk.blocks[ix][iy][iz - 1] == 0 {
+                if iz == 0 || blocks[ix][iy][iz - 1] == 0 {
                     add_face(
                         [
                             [0.0, 0.0, 0.0],
@@ -144,7 +160,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Back
-                if iz == 0 || iz == CHUNK_SIZE - 1 || chunk.blocks[ix][iy][iz + 1] == 0 {
+                if iz == 0 || iz == CHUNK_SIZE - 1 || blocks[ix][iy][iz + 1] == 0 {
                     add_face(
                         [
                             [1.0, 0.0, 1.0],
@@ -158,7 +174,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Left
-                if ix == 0 || chunk.blocks[ix - 1][iy][iz] == 0 {
+                if ix == 0 || blocks[ix - 1][iy][iz] == 0 {
                     add_face(
                         [
                             [0.0, 0.0, 1.0],
@@ -172,7 +188,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Right
-                if ix == 0 || ix == CHUNK_SIZE - 1 || chunk.blocks[ix + 1][iy][iz] == 0 {
+                if ix == 0 || ix == CHUNK_SIZE - 1 || blocks[ix + 1][iy][iz] == 0 {
                     add_face(
                         [
                             [1.0, 0.0, 0.0],
@@ -186,7 +202,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Top
-                if iy == 0 || iy == CHUNK_SIZE - 1 || chunk.blocks[ix][iy + 1][iz] == 0 {
+                if iy == 0 || iy == CHUNK_SIZE - 1 || blocks[ix][iy + 1][iz] == 0 {
                     add_face(
                         [
                             [0.0, 1.0, 0.0],
@@ -200,7 +216,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Bottom
-                if iy == 0 || chunk.blocks[ix][iy - 1][iz] == 0 {
+                if iy == 0 || blocks[ix][iy - 1][iz] == 0 {
                     add_face(
                         [
                             [0.0, 0.0, 1.0],

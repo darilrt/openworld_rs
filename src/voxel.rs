@@ -15,6 +15,8 @@ impl Plugin for VoxelPlugins {
         app.init_resource::<world::World>();
         app.add_systems(Startup, world::startup);
         app.add_systems(Update, world::update);
+        app.add_systems(Update, world::unload_chunks);
+        app.add_systems(Update, world::load_chunks);
         app.add_systems(Update, world::debug);
         app.add_systems(Update, chunk::update);
     }

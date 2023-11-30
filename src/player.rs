@@ -1,7 +1,6 @@
 use bevy::{
     input::mouse::MouseMotion,
     prelude::*,
-    render::camera,
     window::{CursorGrabMode, PrimaryWindow},
 };
 use bevy_rapier3d::prelude::*;
@@ -39,7 +38,7 @@ impl Default for ControlsSettings {
         Self {
             mouse_sensitivity: 0.25,
             movement_speed: 10.0,
-            run_speed: 3.0,
+            run_speed: 20.0,
         }
     }
 }
