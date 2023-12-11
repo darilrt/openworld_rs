@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use bevy::{
-    ecs::query,
     prelude::*,
     reflect::TypePath,
     render::render_resource::{AsBindGroup, ShaderRef},
@@ -68,28 +67,4 @@ impl Material for BodyMaterial {
 
 pub fn build(app: &mut App) {
     app.add_plugins(MaterialPlugin::<BodyMaterial>::default());
-
-    app.add_systems(Startup, startup);
-}
-
-fn startup(
-    mut query: Query<Entity, With<Body>>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<BodyMaterial>>,
-) {
-    for entity in query.iter_mut() {
-        commands.entity(entity).insert(MaterialMeshBundle {
-            mesh: meshes.add(Mesh::from(shape::Capsule {
-                radius: 0.5,
-                depth: 1.0,
-                ..default()
-            })),
-            material: materials.add(BodyMaterial {
-                color: Color::rgb(0.8, 0.7, 0.6),
-                alpha_mode: AlphaMode::Blend,
-            }),
-            ..default()
-        });
-    }
 }

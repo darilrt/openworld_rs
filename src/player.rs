@@ -5,8 +5,6 @@ use bevy::{
 };
 use bevy_rapier3d::prelude::*;
 
-use crate::voxel;
-
 #[derive(Component)]
 pub struct Player {
     velocity: Vec3,
@@ -94,7 +92,16 @@ fn setup(
     commands.spawn((
         RigidBody::KinematicPositionBased,
         Collider::capsule(-Vec3::Y / 2.0, Vec3::Y / 2.0, 0.5),
-        voxel::body::Body::default(),
+        PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::Capsule {
+                radius: 0.5,
+                depth: 1.0,
+                ..default()
+            })),
+            material: materials.add(Color::rgb_u8(124, 144, 255).into()),
+            transform: Transform::from_xyz(32.0, 62.0, 32.0),
+            ..default()
+        },
         Player {
             camera_pivote: Vec3::ZERO,
             camera_rotation: Vec2::ZERO,
@@ -109,7 +116,6 @@ fn setup(
             }),
             ..default()
         },
-        Transform::from_xyz(32.0, 62.0, 32.0),
     ));
 }
 
