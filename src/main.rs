@@ -21,9 +21,6 @@ fn main() {
                 })
                 .set(ImagePlugin::default_nearest()),
             RapierPhysicsPlugin::<NoUserData>::default(),
-            // RapierDebugRenderPlugin::default(),
-            // WorldInspectorPlugin::new(),
-            // LogDiagnosticsPlugin::default(),
             voxel::VoxelPlugins::default(),
             PlayerPlugins::default(),
         ))
@@ -66,11 +63,15 @@ fn update_chunks(
     query_player: Query<&Transform, With<Player>>,
     mut last_chunk: Local<IVec3>,
 ) {
+    if query_player.is_empty() {
+        return;
+    }
+
     let player_pos = query_player.single().translation;
 
     let chunk_pos = IVec3::new(
         (player_pos.x / voxel::CHUNK_SIZE as f32).floor() as i32,
-        (player_pos.y / voxel::CHUNK_SIZE as f32).floor() as i32,
+        0,
         (player_pos.z / voxel::CHUNK_SIZE as f32).floor() as i32,
     );
 

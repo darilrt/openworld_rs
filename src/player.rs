@@ -5,6 +5,8 @@ use bevy::{
 };
 use bevy_rapier3d::prelude::*;
 
+use crate::voxel;
+
 #[derive(Component)]
 pub struct Player {
     velocity: Vec3,
@@ -38,7 +40,7 @@ impl Default for ControlsSettings {
         Self {
             mouse_sensitivity: 0.25,
             movement_speed: 10.0,
-            run_speed: 20.0,
+            run_speed: 2.5,
         }
     }
 }
@@ -76,35 +78,38 @@ fn setup(
             transform: Transform::from_xyz(-20.0, 34.0, -28.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..default()
         },
+        FogSettings {
+            color: Color::rgba(0.35, 0.35, 0.35, 1.0),
+            directional_light_color: Color::rgba(1.0, 0.95, 0.85, 0.5),
+            directional_light_exponent: 30.0,
+            falloff: FogFalloff::from_visibility_colors(
+                32.0 * 15.0,
+                Color::rgb(0.35, 0.35, 0.35),
+                Color::rgb(0.6, 0.6, 0.6),
+            ),
+        },
         PlayerCamera { mode: Mode::Free },
     ));
 
     commands.spawn((
         RigidBody::KinematicPositionBased,
-        Collider::capsule(-Vec3::Y, Vec3::Y, 1.0),
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Capsule {
-                radius: 1.0,
-                depth: 2.0,
-                ..default()
-            })),
-            material: materials.add(Color::rgb_u8(124, 144, 255).into()),
-            transform: Transform::from_xyz(32.0, 62.0, 32.0),
-            ..default()
-        },
+        Collider::capsule(-Vec3::Y / 2.0, Vec3::Y / 2.0, 0.5),
+        voxel::body::Body::default(),
         Player {
             camera_pivote: Vec3::ZERO,
             camera_rotation: Vec2::ZERO,
-            camera_distance: 20.0,
+            camera_distance: 15.0,
             ..default()
         },
         KinematicCharacterController {
             autostep: Some(CharacterAutostep {
                 max_height: CharacterLength::Absolute(1.5),
+                min_width: CharacterLength::Absolute(1.5),
                 ..default()
             }),
             ..default()
         },
+        Transform::from_xyz(32.0, 62.0, 32.0),
     ));
 }
 
@@ -129,6 +134,11 @@ fn update_camera(
     let mouse_rel_dt = mouse_rel * time.delta_seconds() * settings.mouse_sensitivity;
 
     let (mut camera_transform, mut camera) = camera_query.single_mut();
+
+    if player_query.is_empty() {
+        return;
+    }
+
     let (player_transform, mut player) = player_query.single_mut();
 
     let mut window = primary_window.single_mut();

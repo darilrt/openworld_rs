@@ -8,7 +8,7 @@ use bevy::{
 use bevy_egui::egui::mutex::RwLock;
 use bevy_rapier3d::geometry::Collider;
 
-use crate::player::Player;
+use super::world::ChunkState;
 
 pub const CHUNK_SIZE: usize = 64;
 
@@ -16,19 +16,34 @@ pub const CHUNK_SIZE: usize = 64;
 pub struct Chunk {
     pub updated: bool,
     pub position: IVec3,
-    pub blocks: Arc<RwLock<Vec<Vec<Vec<u8>>>>>,
+    pub blocks: Arc<RwLock<Vec<u8>>>,
 }
 
 impl Chunk {
     pub fn new(position: IVec3) -> Self {
         Self {
             position,
-            blocks: Arc::new(RwLock::new(vec![
-                vec![vec![0; CHUNK_SIZE]; CHUNK_SIZE];
-                CHUNK_SIZE
-            ])),
+            blocks: Arc::new(RwLock::new(vec![0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE])),
             updated: false,
         }
+    }
+
+    pub fn get_world_position(&self) -> Vec3 {
+        Vec3::new(
+            self.position.x as f32 * CHUNK_SIZE as f32,
+            self.position.y as f32 * CHUNK_SIZE as f32,
+            self.position.z as f32 * CHUNK_SIZE as f32,
+        )
+    }
+
+    pub fn get_block(&self, x: usize, y: usize, z: usize) -> u8 {
+        let blocks = self.blocks.as_ref().read();
+        blocks[x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE]
+    }
+
+    pub fn set_block(&mut self, x: usize, y: usize, z: usize, block: u8) {
+        let mut blocks = self.blocks.as_ref().write();
+        blocks[x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE] = block;
     }
 }
 
@@ -42,39 +57,6 @@ impl Clone for Chunk {
     }
 }
 
-pub fn update(
-    mut query: Query<(&mut Chunk, &mut Collider, &mut Handle<Mesh>), With<Chunk>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut player_query: Query<&mut Transform, With<Player>>,
-    mut world: ResMut<super::world::World>,
-) {
-    let player_transform = player_query.single_mut();
-
-    for (mut chunk, mut collider, mesh_ref) in &mut query {
-        let chunk_pos = chunk.position;
-
-        if player_transform.translation.distance(Vec3::new(
-            chunk_pos.x as f32 * CHUNK_SIZE as f32 + 0.5,
-            chunk_pos.y as f32 * CHUNK_SIZE as f32 + 0.5,
-            chunk_pos.z as f32 * CHUNK_SIZE as f32 + 0.5,
-        )) > 5.0 * CHUNK_SIZE as f32
-        {
-            world.unload_chunk(chunk_pos);
-        }
-
-        if chunk.updated {
-            continue;
-        }
-
-        let (mesh, colliders) = build_chunk_mesh(&chunk);
-
-        *meshes.get_mut(mesh_ref.id()).unwrap() = mesh;
-        collider.raw = colliders.raw;
-
-        chunk.updated = true;
-    }
-}
-
 pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
     let mut colliders: Vec<(Vec3, Quat, Collider)> = vec![];
@@ -85,23 +67,27 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
     let mut uvs: Vec<[f32; 2]> = vec![];
     let mut indices: Vec<u32> = vec![];
 
+    let at = |x: usize, y: usize, z: usize| -> u8 {
+        let blocks = chunk.blocks.as_ref().read();
+        blocks[x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE]
+    };
+
     for ix in 0..CHUNK_SIZE {
         for iy in 0..CHUNK_SIZE {
             for iz in 0..CHUNK_SIZE {
-                let block = chunk.blocks.as_ref().write()[ix][iy][iz];
-                let blocks = chunk.blocks.as_ref().read();
+                let block = at(ix, iy, iz);
 
                 if block == 0 {
                     continue;
                 }
 
                 // add collider if any side is exposed
-                if (ix == 0 || ix == CHUNK_SIZE - 1 || blocks[ix - 1][iy][iz] == 0)
-                    || (ix == 0 || ix == CHUNK_SIZE - 1 || blocks[ix + 1][iy][iz] == 0)
-                    || (iy == 0 || iy == CHUNK_SIZE - 1 || blocks[ix][iy - 1][iz] == 0)
-                    || (iy == 0 || iy == CHUNK_SIZE - 1 || blocks[ix][iy + 1][iz] == 0)
-                    || (iz == 0 || iz == CHUNK_SIZE - 1 || blocks[ix][iy][iz - 1] == 0)
-                    || (iz == 0 || iz == CHUNK_SIZE - 1 || blocks[ix][iy][iz + 1] == 0)
+                if (ix == 0 || ix == CHUNK_SIZE - 1 || at(ix - 1, iy, iz) == 0)
+                    || (ix == 0 || ix == CHUNK_SIZE - 1 || at(ix + 1, iy, iz) == 0)
+                    || (iy == 0 || iy == CHUNK_SIZE - 1 || at(ix, iy - 1, iz) == 0)
+                    || (iy == 0 || iy == CHUNK_SIZE - 1 || at(ix, iy + 1, iz) == 0)
+                    || (iz == 0 || iz == CHUNK_SIZE - 1 || at(ix, iy, iz - 1) == 0)
+                    || (iz == 0 || iz == CHUNK_SIZE - 1 || at(ix, iy, iz + 1) == 0)
                 {
                     colliders.push((
                         Vec3::new(ix as f32 + 0.5, iy as f32 + 0.5, iz as f32 + 0.5),
@@ -146,7 +132,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 };
 
                 // Front
-                if iz == 0 || blocks[ix][iy][iz - 1] == 0 {
+                if iz == 0 || at(ix, iy, iz - 1) == 0 {
                     add_face(
                         [
                             [0.0, 0.0, 0.0],
@@ -160,7 +146,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Back
-                if iz == 0 || iz == CHUNK_SIZE - 1 || blocks[ix][iy][iz + 1] == 0 {
+                if iz == 0 || iz == CHUNK_SIZE - 1 || at(ix, iy, iz + 1) == 0 {
                     add_face(
                         [
                             [1.0, 0.0, 1.0],
@@ -174,7 +160,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Left
-                if ix == 0 || blocks[ix - 1][iy][iz] == 0 {
+                if ix == 0 || at(ix - 1, iy, iz) == 0 {
                     add_face(
                         [
                             [0.0, 0.0, 1.0],
@@ -188,7 +174,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Right
-                if ix == 0 || ix == CHUNK_SIZE - 1 || blocks[ix + 1][iy][iz] == 0 {
+                if ix == 0 || ix == CHUNK_SIZE - 1 || at(ix + 1, iy, iz) == 0 {
                     add_face(
                         [
                             [1.0, 0.0, 0.0],
@@ -202,7 +188,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Top
-                if iy == 0 || iy == CHUNK_SIZE - 1 || blocks[ix][iy + 1][iz] == 0 {
+                if iy == 0 || iy == CHUNK_SIZE - 1 || at(ix, iy + 1, iz) == 0 {
                     add_face(
                         [
                             [0.0, 1.0, 0.0],
@@ -216,7 +202,7 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
                 }
 
                 // Bottom
-                if iy == 0 || blocks[ix][iy - 1][iz] == 0 {
+                if iy == 0 || at(ix, iy - 1, iz) == 0 {
                     add_face(
                         [
                             [0.0, 0.0, 1.0],
@@ -239,4 +225,38 @@ pub fn build_chunk_mesh(chunk: &Chunk) -> (Mesh, Collider) {
     mesh.set_indices(Some(Indices::U32(indices)));
 
     (mesh, Collider::compound(colliders))
+}
+
+pub fn spawn_chunk(
+    commands: &mut Commands,
+    asset_server: &mut ResMut<AssetServer>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    state: ChunkState,
+) -> Entity {
+    let block_texture: Handle<Image> = asset_server.load("textures/block.png");
+
+    let transform = Transform::from_translation(Vec3::new(
+        state.chunk.position.x as f32 * CHUNK_SIZE as f32,
+        state.chunk.position.y as f32 * CHUNK_SIZE as f32,
+        state.chunk.position.z as f32 * CHUNK_SIZE as f32,
+    ));
+
+    commands
+        .spawn((
+            state.chunk,
+            PbrBundle {
+                mesh: state.mesh,
+                material: materials
+                    .add(StandardMaterial {
+                        base_color: Color::rgb(0.9, 0.9, 0.9),
+                        base_color_texture: Some(block_texture.clone()),
+                        ..default()
+                    })
+                    .into(),
+                transform: transform,
+                ..default()
+            },
+            state.collider,
+        ))
+        .id()
 }

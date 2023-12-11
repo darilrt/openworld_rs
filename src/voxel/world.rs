@@ -3,24 +3,27 @@ use std::{
     thread::{self},
 };
 
+use crate::player::Player;
+
 use super::chunk::*;
-use bevy::{prelude::*, utils::HashMap};
+use super::type_map::*;
+use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use bevy_rapier3d::prelude::*;
 use noise::NoiseFn;
 
 #[derive(Clone)]
 pub struct ChunkState {
-    entity: Option<Entity>,
-    mesh: Handle<Mesh>,
-    collider: Collider,
-    chunk: Chunk,
-    is_showing: bool,
+    pub entity: Option<Entity>,
+    pub mesh: Handle<Mesh>,
+    pub collider: Collider,
+    pub chunk: Chunk,
+    pub is_showing: bool,
 }
 
 #[derive(Resource)]
 pub struct World {
-    pub chunks: HashMap<IVec3, ChunkState>,
+    pub chunks: Map<IVec3, ChunkState>,
     pub chunks_to_load: LinkedList<IVec3>,
     pub chunks_to_unload: LinkedList<IVec3>,
     pub chunks_threads: LinkedList<thread::JoinHandle<(Chunk, Mesh, Collider)>>,
@@ -35,7 +38,7 @@ impl Default for World {
 impl World {
     pub fn new() -> Self {
         Self {
-            chunks: HashMap::new(),
+            chunks: Map::new(),
             chunks_to_load: LinkedList::new(),
             chunks_to_unload: LinkedList::new(),
             chunks_threads: LinkedList::new(),
@@ -51,14 +54,6 @@ impl World {
 
         self.chunks_to_load.push_back(position);
     }
-
-    pub fn unload_chunk(&mut self, position: IVec3) {
-        if !self.chunks.contains_key(&position) {
-            return;
-        }
-
-        self.chunks_to_unload.push_back(position);
-    }
 }
 
 pub fn startup(mut world: ResMut<World>) {
@@ -67,122 +62,88 @@ pub fn startup(mut world: ResMut<World>) {
 
 pub fn update(
     mut commands: Commands,
-    asset_server: ResMut<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut chunks_query: Query<(&mut Chunk, Entity)>,
+    mut player_query: Query<&mut Transform, With<Player>>,
     mut world: ResMut<World>,
 ) {
-    let block_texture: Handle<Image> = asset_server.load("textures/block.png");
-
-    if world.chunks_threads.len() > 0 && world.chunks_threads.front().unwrap().is_finished() {
-        let ele = world.chunks_threads.pop_front().unwrap();
-
-        let (chunk, mesh, collider) = ele.join().unwrap();
-        let mut chunk_state = ChunkState {
-            entity: None,
-            mesh: meshes.add(mesh),
-            collider,
-            chunk,
-            is_showing: true,
-        };
-
-        let state = chunk_state.clone();
-        let transform = Transform::from_translation(Vec3::new(
-            state.chunk.position.x as f32 * CHUNK_SIZE as f32,
-            state.chunk.position.y as f32 * CHUNK_SIZE as f32,
-            state.chunk.position.z as f32 * CHUNK_SIZE as f32,
-        ));
-
-        chunk_state.entity = Some(
-            commands
-                .spawn((
-                    state.chunk,
-                    PbrBundle {
-                        mesh: state.mesh,
-                        material: materials
-                            .add(StandardMaterial {
-                                base_color: Color::rgb(0.9, 0.9, 0.9),
-                                base_color_texture: Some(block_texture.clone()),
-                                ..default()
-                            })
-                            .into(),
-                        transform: transform,
-                        ..default()
-                    },
-                    state.collider,
-                ))
-                .id(),
-        );
-        world.chunks.insert(chunk_state.chunk.position, chunk_state);
+    if player_query.is_empty() {
+        return;
     }
 
-    if world.chunks_to_load.front().is_none() {
-        return;
+    let transform = player_query.single_mut();
+
+    for (chunk, entity) in chunks_query.iter_mut() {
+        let pos = chunk.get_world_position();
+
+        if pos.distance(transform.translation) > 32.0 * 15.0 {
+            let pos = chunk.position;
+
+            if let Some(state) = world.chunks.get_mut(&pos) {
+                state.entity = None;
+                state.is_showing = false;
+                commands.entity(entity).despawn_recursive();
+            } else {
+                world.chunks.remove(&pos);
+            }
+        }
     }
 }
 
 pub fn load_chunks(
-    mut commands: Commands,
-    asset_server: ResMut<AssetServer>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut world: ResMut<World>,
+    mut commands: Commands,
+    mut asset_server: ResMut<AssetServer>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let block_texture: Handle<Image> = asset_server.load("textures/block.png");
+    if world.chunks_to_load.is_empty() {
+        return;
+    }
 
-    let world: &mut World = &mut world;
+    while world.chunks_to_load.len() > 0 {
+        let chunk_pos = world.chunks_to_load.pop_front().unwrap();
 
-    for pos in world.chunks_to_load.iter() {
-        if world.chunks.contains_key(pos) {
-            if let Some(state) = world.chunks.get_mut(pos) {
-                if !state.is_showing {
-                    let transform = Transform::from_translation(Vec3::new(
-                        state.chunk.position.x as f32 * CHUNK_SIZE as f32,
-                        state.chunk.position.y as f32 * CHUNK_SIZE as f32,
-                        state.chunk.position.z as f32 * CHUNK_SIZE as f32,
-                    ));
+        if world.chunks.contains_key(&chunk_pos) {
+            if world.chunks.contains_key(&chunk_pos) {
+                let mut chunk_state = world.chunks.get_mut(&chunk_pos).unwrap().clone();
 
-                    let chunk_state = state.clone();
-
-                    state.entity = Some(
-                        commands
-                            .spawn((
-                                chunk_state.chunk,
-                                PbrBundle {
-                                    mesh: chunk_state.mesh,
-                                    material: materials
-                                        .add(StandardMaterial {
-                                            base_color: Color::rgb(0.9, 0.9, 0.9),
-                                            base_color_texture: Some(block_texture.clone()),
-                                            ..default()
-                                        })
-                                        .into(),
-                                    transform: transform,
-                                    ..default()
-                                },
-                                chunk_state.collider,
-                            ))
-                            .id(),
-                    );
-
-                    state.is_showing = true;
+                if chunk_state.is_showing {
+                    continue;
                 }
+
+                chunk_state.entity = Some(spawn_chunk(
+                    &mut commands,
+                    &mut asset_server,
+                    &mut materials,
+                    chunk_state.clone(),
+                ));
+                chunk_state.is_showing = true;
+
+                world.chunks.insert(chunk_state.chunk.position, chunk_state);
+                return;
             }
             continue;
         }
 
-        let pos = *pos;
-
         let handle = thread::spawn(move || {
-            let mut chunk = generate_chunk(pos.x, pos.z);
+            let mut chunk = generate_chunk_data(chunk_pos.x, chunk_pos.z);
             let (mesh, collider) = build_chunk_mesh(&chunk);
             chunk.updated = true;
             (chunk, mesh, collider)
         });
 
+        world.chunks.insert(
+            chunk_pos,
+            ChunkState {
+                entity: None,
+                mesh: Handle::default(),
+                collider: Collider::default(),
+                chunk: Chunk::new(chunk_pos),
+                is_showing: false,
+            },
+        );
+
         world.chunks_threads.push_back(handle);
     }
-
-    world.chunks_to_load.clear();
 }
 
 pub fn unload_chunks(mut commands: Commands, mut world: ResMut<World>) {
@@ -201,14 +162,58 @@ pub fn unload_chunks(mut commands: Commands, mut world: ResMut<World>) {
             }
         }
     }
-
     world.chunks_to_unload.clear();
 }
 
-fn generate_chunk(x: i32, z: i32) -> Chunk {
+pub fn generate_chunks(
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut world: ResMut<World>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut asset_server: ResMut<AssetServer>,
+    mut commands: Commands,
+) {
+    if world.chunks_threads.is_empty() {
+        return;
+    }
+
+    let mut threads_unfinished: LinkedList<thread::JoinHandle<(Chunk, Mesh, Collider)>> =
+        LinkedList::new();
+
+    while world.chunks_threads.len() > 0 {
+        let thread = world.chunks_threads.pop_front().unwrap();
+
+        if !thread.is_finished() {
+            threads_unfinished.push_back(thread);
+            break;
+        }
+
+        let (chunk, mesh, collider) = thread.join().unwrap();
+
+        let mut chunk_state = ChunkState {
+            entity: None,
+            mesh: meshes.add(mesh),
+            collider,
+            chunk,
+            is_showing: true,
+        };
+
+        chunk_state.entity = Some(spawn_chunk(
+            &mut commands,
+            &mut asset_server,
+            &mut materials,
+            chunk_state.clone(),
+        ));
+
+        world.chunks.insert(chunk_state.chunk.position, chunk_state);
+    }
+
+    world.chunks_threads.append(&mut threads_unfinished);
+}
+
+fn generate_chunk_data(x: i32, z: i32) -> Chunk {
     let noise = noise::Perlin::new(21744033);
 
-    let chunk = Chunk::new(IVec3::new(x, 0, z));
+    let mut chunk = Chunk::new(IVec3::new(x, 0, z));
     let global_pos: Vec3 = Vec3::new(
         x as f32 * CHUNK_SIZE as f32 + 0.5,
         0.0,
@@ -224,18 +229,29 @@ fn generate_chunk(x: i32, z: i32) -> Chunk {
                     cz as f32 + global_pos.z,
                 );
 
-                let npos: Vec2 = Vec2::new(pos.x, pos.z) / 100.0;
+                let mut npos: Vec2 = Vec2::new(pos.x, pos.z) / 100.0;
 
-                let noise = noise.get([npos.x as f64, npos.y as f64]);
-                chunk.blocks.as_ref().write()[cx][cy][cz] = if pos.y - 16.0 < noise as f32 * 10.0 {
-                    if pos.y < 10.0 {
-                        1
+                let mut h = noise.get([npos.x as f64, npos.y as f64]);
+
+                npos *= 0.50;
+                let factor = noise.get([npos.x as f64, npos.y as f64]);
+
+                h = (h * factor) * 32.0;
+
+                chunk.set_block(
+                    cx,
+                    cy,
+                    cz,
+                    if pos.y - 16.0 < h as f32 {
+                        if pos.y < 10.0 {
+                            1
+                        } else {
+                            2
+                        }
                     } else {
-                        2
-                    }
-                } else {
-                    0
-                };
+                        0
+                    },
+                );
             }
         }
     }
